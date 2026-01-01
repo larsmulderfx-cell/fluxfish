@@ -1,34 +1,53 @@
 cmake_minimum_required(VERSION 3.20)
-project(LiquidChessEngine)
+project(LiquidChessEngine LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Aggressive optimizations
-add_compile_options(
-    -O3
-    -march=native
-    -mtune=native
-    -flto
-    -fno-exceptions
-    -fno-rtti
-    -fstrict-aliasing
-    -funroll-loops
-    -ffast-math
-    -fopenmp-simd
-)
+# Performance flags
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native -mtune=native")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -flto -funroll-loops")
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -DDEBUG")
 
-# Platform-specific optimizations
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
-    add_compile_options(-mavx2 -mbmi2 -mpopcnt)
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
-    add_compile_options(-march=armv8.2-a+simd)
-endif()
+# Find Python and pybind11
+find_package(Python3 COMPONENTS Development)
+find_package(pybind11 REQUIRED)
 
-# Create Python extension
-pybind11_add_module(liquid_chess_cpp
-    src/bridge/pybind_module.cpp
-    src/board/board.cpp
+# Main library
+add_library(liquid_chess_core STATIC
+    src/board/bitboard.cpp
+    src/board/movegen.cpp
+    src/board/magic.cpp
     src/search/search.cpp
-    # ... other sources
+    src/search/transposition.cpp
+    src/search/parallel.cpp
+    src/eval/nnue.cpp
+    src/eval/material.cpp
+    src/uci/uci.cpp
 )
+
+target_include_directories(liquid_chess_core PRIVATE include)
+target_compile_options(liquid_chess_core PRIVATE
+    -Wall -Wextra -Wpedantic
+    -fno-exceptions -fno-rtti
+    -mavx2 -mbmi2 -mpopcnt
+)
+
+# Python extension
+pybind11_add_module(liquid_chess_cpp
+    src/bridge/jax_bridge.cpp
+    src/bridge/pybind_module.cpp
+)
+
+target_link_libraries(liquid_chess_cpp PRIVATE liquid_chess_core)
+
+# Executable
+add_executable(liquid_chess src/main.cpp)
+target_link_libraries(liquid_chess PRIVATE liquid_chess_core)
+
+# Tests
+enable_testing()
+add_executable(test_bitboard tests/test_bitboard.cpp)
+target_link_libraries(test_bitboard PRIVATE liquid_chess_core)
+add_test(NAME BitboardTest COMMAND test_bitboard)
